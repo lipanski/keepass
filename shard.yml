@@ -1,0 +1,13 @@
+name: keepass
+version: 0.1.0
+
+authors:
+  - Florin Lipan <florinlipan@gmail.com>
+
+targets:
+  keepass:
+    main: src/keepass.cr
+
+crystal: 0.23.1
+
+license: MIT
