@@ -5,6 +5,14 @@ module Helpers
   def self.parse_simple
     Keepass.parse!("./spec/fixtures/simple.kdbx", "sample")
   end
+
+  def self.parse_groups_and_entries
+    Keepass.parse!("./spec/fixtures/groups_and_entries.kdbx", "sample")
+  end
+
+  def self.parse_nested_groups
+    Keepass.parse!("./spec/fixtures/nested_groups.kdbx", "sample")
+  end
 end
 
 describe Keepass do
@@ -47,6 +55,9 @@ describe Keepass do
         subject.last_accessed_at.should be_a(Time)
         subject.usage_count.should eq(0)
       end
+    end
+
+    describe "with the groups_and_entries file" do
     end
   end
 end

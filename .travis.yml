@@ -1,4 +1,28 @@
-sudo: true
+sudo: false
 language: crystal
+notifications:
+  email: false
+cache:
+  apt: true
+  directories:
+    - $HOME/libsodium
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - gcc-5
+      - g++-5
 before_install:
-  - sudo apt-get -y install libsodium-dev
+  - if [ ! -d "$HOME/libsodium/lib" ]; then
+      wget https://github.com/jedisct1/libsodium/releases/download/1.0.11/libsodium-1.0.11.tar.gz
+      tar xvfz libsodium-1.0.11.tar.gz
+      cd libsodium-1.0.11
+      ./configure --prefix=$HOME/libsodium
+      make
+      make install
+    else
+      echo 'Using cached directory.'
+    fi
+  - export PKG_CONFIG_PATH=$HOME/libsodium/lib/pkgconfig:$PKG_CONFIG_PATH
+  - export LD_LIBRARY_PATH=$HOME/libsodium/lib:$LD_LIBRARY_PATH
