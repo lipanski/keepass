@@ -2,6 +2,10 @@
 
 A Keepass KDBX v2/v3 parser for Crystal.
 
+## Requirements
+
+- libsodium-dev
+
 ## Resources
 
 - <https://gist.github.com/lgg/e6ccc6e212d18dd2ecd8a8c116fb1e45>

@@ -2,11 +2,13 @@ require "gzip"
 require "openssl"
 require "openssl/cipher"
 require "xml"
+require "./sodium/salsa20"
 
 module Keepass
   class Parser
     KDBX_STABLE_MARKER = Bytes[0x03, 0xd9, 0xa2, 0x9a, 0x67, 0xfb, 0x4b, 0xb5]
     AES_CIPHER_MARKER  = Bytes[0x31, 0xc1, 0xf2, 0xe6, 0xbf, 0x71, 0x43, 0x50, 0xbe, 0x58, 0x05, 0x21, 0x6a, 0xfc, 0x5a, 0xff]
+    INNER_STREAM_IV    = Bytes[0xE8, 0x30, 0x09, 0x4B, 0x97, 0x20, 0x5D, 0x2A]
 
     class GenericError < Exception; end
 
@@ -115,16 +117,6 @@ module Keepass
           break if id == 0
         end
 
-        # puts "cipher: #{@cipher}"
-        # puts "compression: #{@compression}"
-        # puts "master seed: #{@master_seed}"
-        # puts "transform seed: #{@transform_seed}"
-        # puts "transform rounds: #{@transform_rounds}"
-        # puts "encryption iv: #{@encryption_iv}"
-        # puts "protected stream key: #{@protected_stream_key}"
-        # puts "stream start bytes: #{@stream_start_bytes.not_nil!.hexstring}"
-        # puts "inner stream encryption: #{@inner_stream_encryption}"
-
         # Payload
         buffer = Array(UInt8).new
         io.each_byte { |byte| buffer << byte }
@@ -162,7 +154,7 @@ module Keepass
           xml = String.new(slice)
         end
 
-        puts xml
+        salsa20 = Sodium::Salsa20.new(OpenSSL::Digest.new("SHA256").update(@protected_stream_key.not_nil!).digest, INNER_STREAM_IV)
 
         database = Database.new
         document = XML.parse(xml)
@@ -197,7 +189,14 @@ module Keepass
                   when "UserName"
                     user = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
                   when "Password"
-                    password = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                    if password_node = entry_node.children.find { |node| node.name == "Value" }
+                      password =
+                        if password_node["Protected"] == "True"
+                          salsa20.decrypt(password_node.content)
+                        else
+                          password_node.content
+                        end
+                    end
                   when "Notes"
                     notes = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
                   end
@@ -211,7 +210,7 @@ module Keepass
           database.groups << Group.new(uuid.not_nil!, name.not_nil!, entries)
         end
 
-        puts database
+        database
       end
     end
 
@@ -337,4 +336,4 @@ module Keepass
 end
 
 parser = Keepass::Parser.new("sample.kdbx", "sample")
-parser.parse!
+puts parser.parse!
