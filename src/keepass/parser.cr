@@ -43,192 +43,71 @@ module Keepass
     @version_major : UInt16?
     @version_minor : UInt16?
     @cipher : Cipher?
-    @compression : Compression?
     @master_seed : Bytes?
+    @encryption_iv : Bytes?
     @transform_seed : Bytes?
     @transform_rounds : UInt64?
-    @encryption_iv : Bytes?
-    @inner_encryption_key : Bytes?
     @stream_start_bytes : Bytes?
+    @compression : Compression?
     @inner_encryption : InnerEncryption?
+    @inner_encryption_key : Bytes?
 
     def initialize(@io : IO, @password : String)
     end
 
     def parse! : Database
-      # Marker
+      verify_marker!(@io)
+      verify_format!(@io)
+      set_version(@io)
+      set_headers(@io)
+      verify_required_headers!
+      payload = read_payload(@io)
+      @io.close
+
+      decrypted_payload = decrypt(payload)
+      verify_decrypted_payload!(decrypted_payload)
+      data = build_data_from_blocks(decrypted_payload)
+      xml_data = unzip_data_if_needed(data)
+
+      parse_xml(xml_data)
+    end
+
+    private def verify_marker!(io : IO)
       kdb_marker = Bytes.new(4)
-      @io.read(kdb_marker)
+      io.read(kdb_marker)
       unless kdb_marker == KDB_MARKER
         raise Error::NotKdb.new
       end
+    end
 
-      # Format marker
+    private def verify_format!(io : IO)
       format_marker = Bytes.new(4)
-      @io.read_fully(format_marker)
+      io.read_fully(format_marker)
       unless SUPPORTED_FORMATS.includes?(format_marker)
         raise Error::FormatNotSupported.new
       end
-
-      # Version minor
-      @version_minor = @io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
-
-      # Version major
-      @version_major = @io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
-
-      # Headers
-      loop do
-        header_id = @io.read_bytes(UInt8, IO::ByteFormat::LittleEndian)
-        header_length = @io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
-        header_value = Bytes.new(header_length)
-        @io.read_fully(header_value)
-
-        set_header(header_id, header_value)
-
-        break if header_id == 0
-      end
-
-      # Payload
-      buffer = Array(UInt8).new
-      @io.each_byte { |byte| buffer << byte }
-
-      # No need for the file handler any more
-      @io.close
-
-      encrypted_data = Slice.new(buffer.to_unsafe, buffer.size)
-
-      decrypted_data = decrypt(encrypted_data)
-      unless validate!(decrypted_data)
-        raise Error::CorruptedData.new
-      end
-
-      blocks = Array(Block).new
-
-      io = IO::Memory.new(Slice.new(decrypted_data.to_unsafe, decrypted_data.size))
-      until io.peek == Bytes.empty
-        block_id = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
-
-        block_hash = Bytes.new(32)
-        io.read_fully(block_hash)
-
-        block_size = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
-
-        block_data = Bytes.new(block_size)
-        io.read_fully(block_data)
-
-        blocks.push(Block.new(block_id, block_hash, block_data))
-      end
-
-      data = blocks.sort_by!(&.id).reduce(Array(UInt8).new) { |acc, el| acc += el.data.to_a }
-      slice = array_to_slice(data)
-
-      if gzipped?
-        stream = IO::Memory.new(slice, writeable: false)
-        gzip = Gzip::Reader.new(stream)
-        xml = gzip.gets_to_end
-      else
-        xml = String.new(slice)
-      end
-
-      salsa20 = Sodium::Salsa20.new(OpenSSL::Digest.new("SHA256").update(@inner_encryption_key.not_nil!).digest, INNER_STREAM_IV)
-
-      database = Database.new
-      document = XML.parse(xml)
-      top_node = document.first_element_child.not_nil!
-      root_node = top_node.children.find { |node| node.name == "Root" }.not_nil!
-      group_nodes = root_node.children.select { |node| node.name == "Group" }
-      group_nodes.each do |group_node|
-        uuid, name, entries = nil, nil, Array(Entry).new
-        group_node.children.each do |group_attribute_node|
-          case group_attribute_node.name
-          when "UUID"
-            uuid = group_attribute_node.content
-          when "Name"
-            name = group_attribute_node.content
-          when "Entry"
-            uuid, data, created_at, updated_at, last_accessed_at, usage_count = nil, Hash(String, String).new, nil, nil, nil, nil
-            group_attribute_node.children.each do |entry_node|
-              case entry_node.name
-              when "UUID"
-                uuid = entry_node.content
-              when "Times"
-                created_at = entry_node.children.find { |node| node.name == "CreationTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
-                updated_at = entry_node.children.find { |node| node.name == "LastModificationTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
-                last_accessed_at = entry_node.children.find { |node| node.name == "LastAccessTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
-                usage_count = entry_node.children.find { |node| node.name == "UsageCount" }.try(&.content).try { |str| str.to_i }
-              when "String"
-                key_node = entry_node.children.find { |node| node.name == "Key" }
-                value_node = entry_node.children.find { |node| node.name == "Value" }
-                if key_node && value_node
-                  name = key_node.content.underscore
-                  value =
-                    if value_node["Protected"]? == "True"
-                      salsa20.decrypt(value_node.content)
-                    else
-                      value_node.content
-                    end
-
-                  data[name] = value
-                end
-              end
-            end
-
-            entries << Entry.new(uuid.not_nil!, data, created_at, updated_at, last_accessed_at, usage_count)
-          end
-        end
-
-        database.groups << Group.new(uuid.not_nil!, name.not_nil!, entries)
-      end
-
-      database
     end
 
-    private def composite_key
-      hashed_password = OpenSSL::Digest.new("SHA256").update(@password).digest
-
-      OpenSSL::Digest.new("SHA256").update(hashed_password).digest
-    end
-
-    private def master_key
-      cipher = OpenSSL::Cipher.new("aes-256-ecb")
-      cipher.encrypt
-      cipher.key = @transform_seed.not_nil!
-      cipher.padding = false
-
-      transformed_key = composite_key
-      @transform_rounds.not_nil!.times do
-        transformed_key = array_to_slice(cipher.update(transformed_key).to_a + cipher.final.to_a)
-      end
-
-      hashed_transformed_key = OpenSSL::Digest.new("SHA256").update(transformed_key).digest
-      full_key = array_to_slice(@master_seed.not_nil!.to_a + hashed_transformed_key.to_a)
-
-      OpenSSL::Digest.new("SHA256").update(full_key).digest
-    end
-
-    private def decrypt(payload) : Array(UInt8)
-      cipher = OpenSSL::Cipher.new("aes-256-cbc")
-      cipher.decrypt
-      cipher.key = master_key
-      cipher.iv = @encryption_iv.not_nil!
-
-      cipher.update(payload).to_a + cipher.final.to_a
-    end
-
-    private def validate!(data) : Bool
-      data.shift(@stream_start_bytes.not_nil!.size) == @stream_start_bytes.not_nil!.to_a
+    private def set_version(io : IO)
+      @version_minor = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
+      @version_major = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
     end
 
     private def version
       "#{@version_major}.#{@version_minor}"
     end
 
-    private def gzipped?
-      @compression == Compression::Gzip
-    end
+    private def set_headers(io : IO)
+      loop do
+        header_id = io.read_bytes(UInt8, IO::ByteFormat::LittleEndian)
+        header_length = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
+        header_value = Bytes.new(header_length)
+        io.read_fully(header_value)
 
-    private def array_to_slice(array : Array)
-      Slice.new(array.to_unsafe, array.size)
+        set_header(header_id, header_value)
+
+        break if header_id == 0
+      end
     end
 
     private def set_header(id, data)
@@ -293,6 +172,200 @@ module Keepass
         when 2 then InnerEncryption::Salsa20
         else        raise Error::InnerEncryptionNotSupported.new
         end
+    end
+
+    private def verify_required_headers!
+      raise Error::MissingHeader.new("master_seed") if @master_seed.nil?
+      raise Error::MissingHeader.new("encryption_iv") if @encryption_iv.nil?
+      raise Error::MissingHeader.new("transform_seed") if @transform_seed.nil?
+      raise Error::MissingHeader.new("transform_rounds") if @transform_rounds.nil?
+      raise Error::MissingHeader.new("stream_start_bytes") if @stream_start_bytes.nil?
+      raise Error::MissingHeader.new("inner_encryption_key") if @inner_encryption_key.nil? && salsa20?
+    end
+
+    private def read_payload(io : IO) : Array(UInt8)
+      Array(UInt8).new.tap do |buffer|
+        io.each_byte { |byte| buffer << byte }
+      end
+    end
+
+    private def composite_key
+      hashed_password = OpenSSL::Digest.new("SHA256").update(@password).digest
+
+      OpenSSL::Digest.new("SHA256").update(hashed_password).digest
+    end
+
+    private def master_key
+      cipher = OpenSSL::Cipher.new("aes-256-ecb")
+      cipher.encrypt
+      cipher.key = @transform_seed.not_nil!
+      cipher.padding = false
+
+      transformed_key = composite_key
+      @transform_rounds.not_nil!.times do
+        transformed_key_array = cipher.update(transformed_key).to_a + cipher.final.to_a
+        transformed_key = Slice.new(transformed_key_array.to_unsafe, transformed_key_array.size)
+      end
+
+      hashed_transformed_key = OpenSSL::Digest.new("SHA256").update(transformed_key).digest
+      full_key_array = @master_seed.not_nil!.to_a + hashed_transformed_key.to_a
+      full_key = Slice.new(full_key_array.to_unsafe, full_key_array.size)
+
+      OpenSSL::Digest.new("SHA256").update(full_key).digest
+    end
+
+    private def decrypt(payload : Array(UInt8)) : Array(UInt8)
+      decrypt(Slice.new(payload.to_unsafe, payload.size))
+    end
+
+    private def decrypt(payload : Slice(UInt8)) : Array(UInt8)
+      cipher = OpenSSL::Cipher.new("aes-256-cbc")
+      cipher.decrypt
+      cipher.key = master_key
+      cipher.iv = @encryption_iv.not_nil!
+
+      cipher.update(payload).to_a + cipher.final.to_a
+    end
+
+    private def verify_decrypted_payload!(data)
+      unless data.shift(@stream_start_bytes.not_nil!.size) == @stream_start_bytes.not_nil!.to_a
+        raise Error::CorruptedData.new
+      end
+    end
+
+    private def build_data_from_blocks(decrypted_data : Array(UInt8)) : Array(UInt8)
+      blocks = Array(Block).new
+
+      io = IO::Memory.new(Slice.new(decrypted_data.to_unsafe, decrypted_data.size))
+      until io.peek == Bytes.empty
+        block_id = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
+
+        block_hash = Bytes.new(32)
+        io.read_fully(block_hash)
+
+        block_size = io.read_bytes(UInt32, IO::ByteFormat::LittleEndian)
+
+        block_data = Bytes.new(block_size)
+        io.read_fully(block_data)
+
+        blocks.push(Block.new(block_id, block_hash, block_data))
+      end
+
+      blocks.sort_by!(&.id).reduce(Array(UInt8).new) { |acc, el| acc += el.data.to_a }
+    end
+
+    private def gzipped?
+      @compression == Compression::Gzip
+    end
+
+    private def unzip_data_if_needed(data : Array(UInt8)) : String
+      slice = Slice.new(data.to_unsafe, data.size)
+
+      if gzipped?
+        stream = IO::Memory.new(slice, writeable: false)
+        gzip = Gzip::Reader.new(stream)
+        gzip.gets_to_end
+      else
+        String.new(slice)
+      end
+    end
+
+    private def salsa20? : Bool
+      @inner_encryption == InnerEncryption::Salsa20
+    end
+
+    private def salsa20 : Sodium::Salsa20
+      @salsa20 ||=
+        Sodium::Salsa20.new(
+          OpenSSL::Digest.new("SHA256").update(@inner_encryption_key.not_nil!).digest,
+          INNER_STREAM_IV
+        )
+    end
+
+    private def decrypt_inner_value(value) : String
+      if salsa20?
+        salsa20.decrypt(value)
+      else
+        value
+      end
+    end
+
+    private def parse_xml(xml_data : String) : Database
+      database = Database.new(version)
+
+      document = XML.parse(xml_data)
+      top_node = document.first_element_child.not_nil!
+      root_node = top_node.children.find { |node| node.name == "Root" }.not_nil!
+      group_nodes = root_node.children.select { |node| node.name == "Group" }
+
+      group_nodes.each do |group_node|
+        database.groups << parse_group_node(group_node)
+      end
+
+      database
+    end
+
+    private def parse_group_node(group_node : XML::Node) : Group
+      uuid, name, entries = nil, nil, Array(Entry).new
+      group_node.children.each do |group_attribute_node|
+        case group_attribute_node.name
+        when "UUID"
+          uuid = group_attribute_node.content
+        when "Name"
+          name = group_attribute_node.content
+        when "Entry"
+          entries << parse_entry_node(group_attribute_node)
+        end
+      end
+
+      Group.new(uuid.not_nil!, name.not_nil!, entries)
+    end
+
+    private def parse_entry_node(entry_root_node : XML::Node) : Entry
+      uuid, data, created_at, updated_at, last_accessed_at, usage_count = nil, Hash(String, String).new, nil, nil, nil, nil
+      entry_root_node.children.each do |entry_node|
+        case entry_node.name
+        when "UUID"
+          uuid = entry_node.content
+        when "Times"
+          created_at = parse_time_node(entry_node, "CreationTime")
+          updated_at = parse_time_node(entry_node, "LastModificationTime")
+          last_accessed_at = parse_time_node(entry_node, "LastAccessTime")
+          usage_count = parse_int_node(entry_node, "UsageCount")
+        when "String"
+          key_node = find_child_node(entry_node, "Key")
+          value_node = find_child_node(entry_node, "value")
+          if key_node && value_node
+            name = key_node.content.underscore
+            value =
+              if value_node["Protected"]? == "True"
+                decrypt_inner_value(value_node.content)
+              else
+                value_node.content
+              end
+
+            data[name] = value
+          end
+        end
+      end
+
+      Entry.new(uuid.not_nil!, data, created_at, updated_at, last_accessed_at, usage_count)
+    end
+
+    private def find_child_node(parent_node : XML::Node, node_name : String) : XML::Node?
+      parent_node.children.find { |node| node.name == node_name }
+    end
+
+    private def parse_time_node(parent_node : XML::Node, node_name : String) : Time?
+      find_child_node(parent_node, node_name)
+        .try(&.content)
+        .try { |content| Time.parse(content, Time::Format::ISO_8601_DATE_TIME.pattern) }
+    end
+
+    private def parse_int_node(parent_node : XML::Node, node_name : String) : Int32?
+      find_child_node(parent_node, node_name)
+        .try(&.content)
+        .try { |content| content.to_i }
     end
   end
 end

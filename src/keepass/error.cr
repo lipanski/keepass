@@ -6,6 +6,8 @@ module Keepass
 
     class FormatNotSupported < Generic; end
 
+    class MissingHeader < Generic; end
+
     class CorruptedData < Generic; end
 
     class CipherNotSupported < Generic; end
