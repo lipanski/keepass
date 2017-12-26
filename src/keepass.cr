@@ -10,5 +10,3 @@ module Keepass
     Parser.new(io, password).parse!
   end
 end
-
-puts Keepass.parse!("sample.kdbx", "sample")

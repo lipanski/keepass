@@ -58,8 +58,8 @@ module Keepass
     def parse! : Database
       verify_marker!(@io)
       verify_format!(@io)
-      set_version(@io)
-      set_headers(@io)
+      read_version(@io)
+      read_headers(@io)
       verify_required_headers!
       payload = read_payload(@io)
       @io.close
@@ -88,7 +88,7 @@ module Keepass
       end
     end
 
-    private def set_version(io : IO)
+    private def read_version(io : IO)
       @version_minor = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
       @version_major = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
     end
@@ -97,7 +97,7 @@ module Keepass
       "#{@version_major}.#{@version_minor}"
     end
 
-    private def set_headers(io : IO)
+    private def read_headers(io : IO)
       loop do
         header_id = io.read_bytes(UInt8, IO::ByteFormat::LittleEndian)
         header_length = io.read_bytes(UInt16, IO::ByteFormat::LittleEndian)
@@ -282,7 +282,7 @@ module Keepass
         )
     end
 
-    private def decrypt_inner_value(value) : String
+    private def decrypt_inner_value(value : String) : String
       if salsa20?
         salsa20.decrypt(value)
       else
@@ -334,7 +334,7 @@ module Keepass
           usage_count = parse_int_node(entry_node, "UsageCount")
         when "String"
           key_node = find_child_node(entry_node, "Key")
-          value_node = find_child_node(entry_node, "value")
+          value_node = find_child_node(entry_node, "Value")
           if key_node && value_node
             name = key_node.content.underscore
             value =
