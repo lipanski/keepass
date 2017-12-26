@@ -6,14 +6,14 @@ notifications:
 #   apt: true
 #   directories:
 #     - $HOME/libsodium
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - gcc-5
-      - g++-5
-install:
+# addons:
+#   apt:
+#     sources:
+#       - ubuntu-toolchain-r-test
+#     packages:
+#       - gcc-5
+#       - g++-5
+before_script:
   - if [ ! -d "$HOME/libsodium/lib" ]; then
       wget https://github.com/jedisct1/libsodium/releases/download/1.0.11/libsodium-1.0.11.tar.gz
       tar xvfz libsodium-1.0.11.tar.gz
