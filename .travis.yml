@@ -2,17 +2,9 @@ sudo: false
 language: crystal
 notifications:
   email: false
-# cache:
-#   apt: true
-#   directories:
-#     - $HOME/libsodium
-# addons:
-#   apt:
-#     sources:
-#       - ubuntu-toolchain-r-test
-#     packages:
-#       - gcc-5
-#       - g++-5
+cache:
+  directories:
+    - $HOME/libsodium
 install:
   - if [ ! -d "$HOME/libsodium/lib" ]; then
       wget https://github.com/jedisct1/libsodium/releases/download/1.0.11/libsodium-1.0.11.tar.gz;
@@ -21,6 +13,7 @@ install:
       ./configure --prefix=$HOME/libsodium;
       make;
       make install;
+      cd $TRAVIS_BUILD_DIR;
     else
       echo 'Using cached directory.';
     fi
