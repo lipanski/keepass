@@ -44,8 +44,12 @@ describe Keepass do
         subject.title.should eq("test")
         subject.url.should eq("http://www.example.com")
         subject.user_name.should eq("user")
-        subject.password.should eq("pass")
         subject.notes.should eq("notes")
+      end
+
+      it "decodes the password properly" do
+        subject = Helpers.parse_simple.groups[0].entries[0].password
+        subject.should eq("pass")
       end
 
       it "sets the proper entry timestamps and usage count" do
@@ -58,6 +62,31 @@ describe Keepass do
     end
 
     describe "with the groups_and_entries file" do
+      it "parses it to a Database object" do
+        subject = Helpers.parse_groups_and_entries
+        subject.should be_a(Keepass::Database)
+      end
+
+      it "generates the proper child group count on the Root node" do
+        subject = Helpers.parse_groups_and_entries.groups[0]
+        subject.name.should eq("Root")
+        subject.children.size.should eq(2)
+      end
+
+      it "sets the parent relationship correctly on the child nodes" do
+        subject = Helpers.parse_groups_and_entries.groups[0]
+        subject.children.each do |child|
+          child.parent.should eq(subject)
+        end
+      end
+
+      it "sets the proper entries to every child group" do
+        first_child = Helpers.parse_groups_and_entries.groups[0].children[0]
+        first_child.entries.size.should eq(2)
+
+        second_child = Helpers.parse_groups_and_entries.groups[0].children[1]
+        second_child.entries.size.should eq(2)
+      end
     end
   end
 end

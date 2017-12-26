@@ -306,19 +306,21 @@ module Keepass
     end
 
     private def parse_group_node(group_node : XML::Node) : Group
-      uuid, name, entries = nil, nil, Array(Entry).new
+      uuid, name, children, entries = nil, nil, Array(Group).new, Array(Entry).new
       group_node.children.each do |group_attribute_node|
         case group_attribute_node.name
         when "UUID"
           uuid = group_attribute_node.content
         when "Name"
           name = group_attribute_node.content
+        when "Group"
+          children << parse_group_node(group_attribute_node)
         when "Entry"
           entries << parse_entry_node(group_attribute_node)
         end
       end
 
-      Group.new(uuid.not_nil!, name.not_nil!, entries)
+      Group.new(uuid.not_nil!, name.not_nil!, children, entries)
     end
 
     private def parse_entry_node(entry_root_node : XML::Node) : Entry
