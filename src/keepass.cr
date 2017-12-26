@@ -145,7 +145,7 @@ module Keepass
           when "Name"
             name = group_attribute_node.content
           when "Entry"
-            uuid, title, url, user, password, notes, created_at, updated_at, last_accessed_at, usage_count = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+            uuid, data, created_at, updated_at, last_accessed_at, usage_count = nil, Hash(String, String).new, nil, nil, nil, nil
             group_attribute_node.children.each do |entry_node|
               case entry_node.name
               when "UUID"
@@ -156,29 +156,23 @@ module Keepass
                 last_accessed_at = entry_node.children.find { |node| node.name == "LastAccessTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
                 usage_count = entry_node.children.find { |node| node.name == "UsageCount" }.try(&.content).try { |str| str.to_i }
               when "String"
-                case entry_node.children.find { |node| node.name == "Key" }.try(&.content)
-                when "Title"
-                  title = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
-                when "URL"
-                  url = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
-                when "UserName"
-                  user = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
-                when "Password"
-                  if password_node = entry_node.children.find { |node| node.name == "Value" }
-                    password =
-                      if password_node["Protected"] == "True"
-                        salsa20.decrypt(password_node.content)
-                      else
-                        password_node.content
-                      end
-                  end
-                when "Notes"
-                  notes = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                key_node = entry_node.children.find { |node| node.name == "Key" }
+                value_node = entry_node.children.find { |node| node.name == "Value" }
+                if key_node && value_node
+                  name = key_node.content.underscore
+                  value =
+                    if value_node["Protected"]? == "True"
+                      salsa20.decrypt(value_node.content)
+                    else
+                      value_node.content
+                    end
+
+                  data[name] = value
                 end
               end
             end
 
-            entries << Entry.new(uuid.not_nil!, title, url, user, password, notes, created_at, updated_at, last_accessed_at, usage_count)
+            entries << Entry.new(uuid.not_nil!, data, created_at, updated_at, last_accessed_at, usage_count)
           end
         end
 
