@@ -1,6 +1,7 @@
 require "gzip"
 require "openssl"
 require "openssl/cipher"
+require "xml"
 
 module Keepass
   class Parser
@@ -37,6 +38,35 @@ module Keepass
       property data : Slice(UInt8)
 
       def initialize(@id, @hash, @data)
+      end
+    end
+
+    struct Database
+      property groups : Array(Group)
+
+      def initialize
+        @groups = Array(Group).new
+      end
+    end
+
+    struct Group
+      property uuid : String
+      property name : String
+      property entries : Array(Entry)
+
+      def initialize(@uuid : String, @name : String, @entries : Array(Entry))
+      end
+    end
+
+    struct Entry
+      property uuid : String
+      property title : String?
+      property url : String?
+      property user : String?
+      property password : String?
+      property notes : String?
+
+      def initialize(@uuid, @title, @url, @user, @password, @notes)
       end
     end
 
@@ -118,14 +148,59 @@ module Keepass
         end
 
         data = blocks.sort_by!(&.id).reduce(Array(UInt8).new) { |acc, el| acc += el.data.to_a }
+        slice = array_to_slice(data)
 
         if gzipped?
-          stream = IO::Memory.new(array_to_slice(data), writeable: false)
+          stream = IO::Memory.new(slice, writeable: false)
           gzip = Gzip::Reader.new(stream)
-          data = gzip.gets_to_end
-
-          puts data
+          xml = gzip.gets_to_end
+        else
+          xml = String.new(slice)
         end
+
+        database = Database.new
+        document = XML.parse(xml)
+        top_node = document.first_element_child.not_nil!
+        root_node = top_node.children.find { |node| node.name == "Root" }.not_nil!
+        group_nodes = root_node.children.select { |node| node.name == "Group" }
+        group_nodes.each do |group_node|
+          uuid, name, entries = nil, nil, Array(Entry).new
+          group_node.children.each do |group_attribute_node|
+            case group_attribute_node.name
+            when "UUID"
+              uuid = group_attribute_node.content
+            when "Name"
+              name = group_attribute_node.content
+            when "Entry"
+              uuid, title, url, user, password, notes = nil, nil, nil, nil, nil, nil
+              group_attribute_node.children.each do |entry_node|
+                case entry_node.name
+                when "UUID"
+                  uuid = entry_node.content
+                when "String"
+                  case entry_node.children.find { |node| node.name == "Key" }.try(&.content)
+                  when "Title"
+                    title = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                  when "URL"
+                    url = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                  when "UserName"
+                    user = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                  when "Password"
+                    password = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                  when "Notes"
+                    notes = entry_node.children.find { |node| node.name == "Value" }.try(&.content)
+                  end
+                end
+              end
+
+              entries << Entry.new(uuid.not_nil!, title, url, user, password, notes)
+            end
+          end
+
+          database.groups << Group.new(uuid.not_nil!, name.not_nil!, entries)
+        end
+
+        database
       end
     end
 
