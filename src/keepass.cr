@@ -65,8 +65,12 @@ module Keepass
       property user : String?
       property password : String?
       property notes : String?
+      property created_at : Time?
+      property updated_at : Time?
+      property last_accessed_at : Time?
+      property usage_count : Int32?
 
-      def initialize(@uuid, @title, @url, @user, @password, @notes)
+      def initialize(@uuid, @title, @url, @user, @password, @notes, @created_at, @updated_at, @last_accessed_at, @usage_count)
       end
     end
 
@@ -158,6 +162,8 @@ module Keepass
           xml = String.new(slice)
         end
 
+        puts xml
+
         database = Database.new
         document = XML.parse(xml)
         top_node = document.first_element_child.not_nil!
@@ -172,11 +178,16 @@ module Keepass
             when "Name"
               name = group_attribute_node.content
             when "Entry"
-              uuid, title, url, user, password, notes = nil, nil, nil, nil, nil, nil
+              uuid, title, url, user, password, notes, created_at, updated_at, last_accessed_at, usage_count = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
               group_attribute_node.children.each do |entry_node|
                 case entry_node.name
                 when "UUID"
                   uuid = entry_node.content
+                when "Times"
+                  created_at = entry_node.children.find { |node| node.name == "CreationTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
+                  updated_at = entry_node.children.find { |node| node.name == "LastModificationTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
+                  last_accessed_at = entry_node.children.find { |node| node.name == "LastAccessTime" }.try(&.content).try { |str| Time.parse(str, Time::Format::ISO_8601_DATE_TIME.pattern) }
+                  usage_count = entry_node.children.find { |node| node.name == "UsageCount" }.try(&.content).try { |str| str.to_i }
                 when "String"
                   case entry_node.children.find { |node| node.name == "Key" }.try(&.content)
                   when "Title"
@@ -193,14 +204,14 @@ module Keepass
                 end
               end
 
-              entries << Entry.new(uuid.not_nil!, title, url, user, password, notes)
+              entries << Entry.new(uuid.not_nil!, title, url, user, password, notes, created_at, updated_at, last_accessed_at, usage_count)
             end
           end
 
           database.groups << Group.new(uuid.not_nil!, name.not_nil!, entries)
         end
 
-        database
+        puts database
       end
     end
 
