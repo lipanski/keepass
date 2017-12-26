@@ -1,1 +1,4 @@
+sudo: true
 language: crystal
+before_install:
+  - sudo apt-get -y install libsodium-dev
