@@ -22,10 +22,20 @@ dependencies:
 
 ## Usage
 
+When the file is encrypted with a password:
+
 ```crystal
 require "keepass"
 
 database = Keepass.parse!("/path/to/keepass.kdbx", "password")
+```
+
+When the file is encrypted with a password and a key file:
+
+```crystal
+require "keepass"
+
+database = Keepass.parse!("/path/to/keepass.kdbx", "password", "/path/to/keyfile")
 ```
 
 ### The Keepass::Database object
@@ -132,7 +142,7 @@ Check the [src/keepass/error.cr](https://github.com/lipanski/keepass/blob/master
 
 ## TODO
 
-- [ ] Accept key files.
+- [x] Accept key files.
 - [ ] Write KDBX files.
 - [ ] Parse KDB.
 - [ ] Parse KDBX4.

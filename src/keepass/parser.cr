@@ -2,6 +2,7 @@ require "gzip"
 require "openssl"
 require "openssl/cipher"
 require "xml"
+require "base64"
 require "./error"
 require "./database"
 require "./group"
@@ -33,8 +34,8 @@ module Keepass
 
     struct Block
       property id : UInt32
-      property hash : Slice(UInt8)
-      property data : Slice(UInt8)
+      property hash : Bytes
+      property data : Bytes
 
       def initialize(@id, @hash, @data)
       end
@@ -52,7 +53,7 @@ module Keepass
     @inner_encryption : InnerEncryption?
     @inner_encryption_key : Bytes?
 
-    def initialize(@io : IO, @password : String)
+    def initialize(@io : IO, @password : String, @key_file : IO?)
     end
 
     def parse! : Database
@@ -189,10 +190,37 @@ module Keepass
       end
     end
 
+    @key_file_content : String?
+
+    private def key_file_content : String
+      @key_file_content ||= @key_file.not_nil!.gets_to_end
+    end
+
+    private def key_from_key_file : Bytes
+      return Bytes.empty if @key_file.nil?
+
+      document = XML.parse(key_file_content, XML::ParserOptions::NOENT | XML::ParserOptions::NOWARNING)
+      top_node = document.first_element_child || raise Error::MalformedKeyFile.new
+      key_node = top_node.children.find { |node| node.name == "Key" } || raise Error::MalformedKeyFile.new
+      data_node = key_node.children.find { |node| node.name == "Data" } || raise Error::MalformedKeyFile.new
+
+      Base64.decode(data_node.content)
+    rescue e : XML::Error
+      # It's not XML, let's try something else (not sure about this part)
+      if key_file_content.size == 32
+        key_file_content.to_slice
+      else
+        OpenSSL::Digest.new("SHA256").update(key_file_content.to_slice).digest
+      end
+    end
+
     private def composite_key
       hashed_password = OpenSSL::Digest.new("SHA256").update(@password.to_slice).digest
 
-      OpenSSL::Digest.new("SHA256").update(hashed_password).digest
+      prepared_key_array = hashed_password.to_a + key_from_key_file.to_a
+      prepared_key = Slice.new(prepared_key_array.to_unsafe, prepared_key_array.size)
+
+      OpenSSL::Digest.new("SHA256").update(prepared_key).digest
     end
 
     private def master_key
@@ -218,7 +246,7 @@ module Keepass
       decrypt(Slice.new(payload.to_unsafe, payload.size))
     end
 
-    private def decrypt(payload : Slice(UInt8)) : Array(UInt8)
+    private def decrypt(payload : Bytes) : Array(UInt8)
       cipher = OpenSSL::Cipher.new("aes-256-cbc")
       cipher.decrypt
       cipher.key = master_key

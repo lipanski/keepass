@@ -17,6 +17,10 @@ module Helpers
   def self.parse_utf8
     Keepass.parse!("./spec/fixtures/utf8.kdbx", "șnițel")
   end
+
+  def self.parse_passfile
+    Keepass.parse!("./spec/fixtures/passfile.kdbx", "sample", "./spec/fixtures/passfile")
+  end
 end
 
 describe Keepass do
@@ -170,6 +174,21 @@ describe Keepass do
       it "parses the entry password properly" do
         subject = Helpers.parse_utf8.groups[0].entries[0].password
         subject.should eq("ööö")
+      end
+    end
+
+    describe "with the passfile file" do
+      it "parses it to a Database object" do
+        subject = Helpers.parse_passfile
+        subject.should be_a(Keepass::Database)
+      end
+
+      it "contains the Root level entry" do
+        subject = Helpers.parse_passfile.groups[0].entries
+        subject.size.should eq(1)
+        subject.first.title.should eq("entry")
+        subject.first.user_name.should eq("user")
+        subject.first.password.should eq("pass")
       end
     end
   end

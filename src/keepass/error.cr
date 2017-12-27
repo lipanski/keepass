@@ -18,6 +18,8 @@ module Keepass
 
     class InnerEncryptionNotSupported < Parsing; end
 
+    class MalformedKeyFile < Parsing; end
+
     class DecryptionFailed < Generic; end
   end
 end

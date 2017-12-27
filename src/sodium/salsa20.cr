@@ -8,7 +8,7 @@ module Sodium
       @nonce = nonce.to_slice
     end
 
-    def initialize(@key : Slice(UInt8), @nonce : Slice(UInt8))
+    def initialize(@key : Bytes, @nonce : Bytes)
     end
 
     def encrypt(data : String) : String
