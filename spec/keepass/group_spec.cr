@@ -1,5 +1,4 @@
 require "spec"
-require "random/secure"
 require "../../src/keepass/group"
 
 module Helpers
