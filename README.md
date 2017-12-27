@@ -6,9 +6,7 @@ A Keepass KDBX v2/v3 parser for Crystal.
 
 ## Requirements
 
-This library requires **libsodium**.
-
-On Ubuntu 17.04 you can install it via `sudo apt install libsodium-dev`. For other distros, please check [the libsodium docs](https://download.libsodium.org/doc/).
+This library requires **libsodium**. On Ubuntu 17.04 you can install it via `sudo apt install libsodium-dev`. For other distros, please check [the libsodium docs](https://download.libsodium.org/doc/).
 
 ## Usage
 
@@ -110,7 +108,7 @@ entry.updated_at #=> Time?
 entry.last_accessed_at #=> Time?
 ```
 
-Show the usage count (if availabe):
+Show the usage count (if available):
 
 ```crystal
 entry.usage_count #=> Int32?
