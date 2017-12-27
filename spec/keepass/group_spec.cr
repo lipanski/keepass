@@ -4,14 +4,15 @@ require "../../src/keepass/group"
 
 module Helpers
   def self.build_entries(count : Int32)
-    Array(Keepass::Entry).new(count) do |element|
+    Array(Keepass::Entry).new(count) do
       random = Random.rand(9999).to_s
       uuid = "uuid " + random
       title = "title " + random
       user_name = "user " + random
       password = "pass " + random
       data = {"title" => "title", "user_name" => user_name, "password" => password}
-      element = Keepass::Entry.new(uuid, data, Time.now, Time.now, Time.now, 0)
+
+      Keepass::Entry.new(uuid, data, Time.now, Time.now, Time.now, 0)
     end
   end
 end
