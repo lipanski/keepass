@@ -8,6 +8,18 @@ A Keepass KDBX v2/v3 parser for Crystal.
 
 This library requires **libsodium**. On Ubuntu 17.04 you can install it via `sudo apt install libsodium-dev`. For other distros, please check [the libsodium docs](https://download.libsodium.org/doc/).
 
+## Install
+
+Add the following lines to your `shard.yml`:
+
+```yaml
+dependencies:
+  keepass:
+    github: lipanski/keepass
+```
+
+...and run `crystal deps` or `shards install`.
+
 ## Usage
 
 ```crystal
