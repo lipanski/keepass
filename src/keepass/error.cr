@@ -2,18 +2,22 @@ module Keepass
   module Error
     class Generic < Exception; end
 
-    class NotKdb < Generic; end
+    class Parsing < Generic; end
 
-    class FormatNotSupported < Generic; end
+    class NotKdb < Parsing; end
 
-    class MissingHeader < Generic; end
+    class FormatNotSupported < Parsing; end
 
-    class CorruptedData < Generic; end
+    class MissingHeader < Parsing; end
 
-    class CipherNotSupported < Generic; end
+    class CorruptedData < Parsing; end
 
-    class CompressionNotSupported < Generic; end
+    class CipherNotSupported < Parsing; end
 
-    class InnerEncryptionNotSupported < Generic; end
+    class CompressionNotSupported < Parsing; end
+
+    class InnerEncryptionNotSupported < Parsing; end
+
+    class DecryptionFailed < Generic; end
   end
 end
