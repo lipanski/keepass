@@ -1,4 +1,4 @@
-require "gzip"
+require "compress/gzip"
 require "openssl"
 require "openssl/cipher"
 require "xml"
@@ -210,17 +210,17 @@ module Keepass
       if key_file_content.size == 32
         key_file_content.to_slice
       else
-        OpenSSL::Digest.new("SHA256").update(key_file_content.to_slice).digest
+        OpenSSL::Digest.new("SHA256").update(key_file_content.to_slice).final
       end
     end
 
     private def composite_key
-      hashed_password = OpenSSL::Digest.new("SHA256").update(@password.to_slice).digest
+      hashed_password = OpenSSL::Digest.new("SHA256").update(@password.to_slice).final
 
       prepared_key_array = hashed_password.to_a + key_from_key_file.to_a
       prepared_key = Slice.new(prepared_key_array.to_unsafe, prepared_key_array.size)
 
-      OpenSSL::Digest.new("SHA256").update(prepared_key).digest
+      OpenSSL::Digest.new("SHA256").update(prepared_key).final
     end
 
     private def master_key
@@ -235,11 +235,11 @@ module Keepass
         transformed_key = Slice.new(transformed_key_array.to_unsafe, transformed_key_array.size)
       end
 
-      hashed_transformed_key = OpenSSL::Digest.new("SHA256").update(transformed_key).digest
+      hashed_transformed_key = OpenSSL::Digest.new("SHA256").update(transformed_key).final
       full_key_array = @master_seed.not_nil!.to_a + hashed_transformed_key.to_a
       full_key = Slice.new(full_key_array.to_unsafe, full_key_array.size)
 
-      OpenSSL::Digest.new("SHA256").update(full_key).digest
+      OpenSSL::Digest.new("SHA256").update(full_key).final
     end
 
     private def decrypt(payload : Array(UInt8)) : Array(UInt8)
@@ -293,7 +293,7 @@ module Keepass
 
       if gzipped?
         stream = IO::Memory.new(slice, writeable: false)
-        gzip = Gzip::Reader.new(stream)
+        gzip = Compress::Gzip::Reader.new(stream)
         gzip.gets_to_end
       else
         String.new(slice)
@@ -307,7 +307,7 @@ module Keepass
     private def salsa20 : Sodium::Salsa20
       @salsa20 ||=
         Sodium::Salsa20.new(
-          OpenSSL::Digest.new("SHA256").update(@inner_encryption_key.not_nil!).digest,
+          OpenSSL::Digest.new("SHA256").update(@inner_encryption_key.not_nil!).final,
           INNER_STREAM_IV
         )
     end
@@ -391,7 +391,7 @@ module Keepass
     private def parse_time_node(parent_node : XML::Node, node_name : String) : Time?
       find_child_node(parent_node, node_name)
         .try(&.content)
-        .try { |content| Time.parse(content, Time::Format::ISO_8601_DATE_TIME.pattern) }
+        .try { |content| Time::Format::ISO_8601_DATE_TIME.parse(content) }
     end
 
     private def parse_int_node(parent_node : XML::Node, node_name : String) : Int32?

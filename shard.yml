@@ -4,6 +4,6 @@ version: 0.2.0
 authors:
   - Florin Lipan <florinlipan@gmail.com>
 
-crystal: 0.24.1
+crystal: 0.35.1
 
 license: MIT

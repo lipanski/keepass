@@ -11,7 +11,7 @@ module Helpers
       password = "pass " + random
       data = {"title" => "title", "user_name" => user_name, "password" => password}
 
-      Keepass::Entry.new(uuid, data, Time.now, Time.now, Time.now, 0)
+      Keepass::Entry.new(uuid, data, Time.local, Time.local, Time.local, 0)
     end
   end
 end
