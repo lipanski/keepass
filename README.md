@@ -1,6 +1,6 @@
 # Keepass
 
- <a href="https://travis-ci.org/lipanski/keepass"><img src="https://travis-ci.org/lipanski/keepass.svg?branch=master"></a>
+ <a href="https://travis-ci.com/lipanski/keepass"><img src="https://travis-ci.com/lipanski/keepass.svg?branch=master"></a>
 
 A Keepass KDBX v2/v3 parser for Crystal.
 
